@@ -1,0 +1,16 @@
+{
+  "id": "com.dndsync.audioplayer",
+  "name": "youtube Audio Player",
+  "version": "1.0.0",
+  "manifest_version": 1,
+  "author": "You",
+  "description": "Paste a YouTube link and everyone in the room hears it together, in sync.",
+  "icon": "/icon.svg",
+  "action": {
+    "title": "youtube Audio Player",
+    "icon": "/icon.svg",
+    "popover": "/index.html",
+    "height": 480,
+    "width": 340
+  }
+}
