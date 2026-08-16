@@ -1,9 +1,8 @@
 {
-  "id": "com.dndsync.audioplayer",
   "name": "youtube Audio Player",
   "version": "1.0.0",
   "manifest_version": 1,
-  "author": "You",
+  "author": "mezodawnhorizon",
   "description": "Paste a YouTube link and everyone in the room hears it together, in sync.",
   "icon": "/icon.svg",
   "action": {
@@ -12,5 +11,8 @@
     "popover": "/index.html",
     "height": 480,
     "width": 340
-  }
+  },
+  "permissions": [
+    { "name": "autoplay", "reason": "Play synced audio without requiring a click in the iframe" }
+  ]
 }
