@@ -53,6 +53,10 @@ html, body {
   border-radius: 6px;
   font-size: 12px;
 }
+.banner.status.error {
+  background: rgba(255, 92, 92, 0.15);
+  border-color: #ff5c5c;
+}
 
 .load-row {
   display: flex;

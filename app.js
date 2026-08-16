@@ -21,6 +21,7 @@ const els = {
   noVideo: document.getElementById("noVideo"),
   syncDot: document.getElementById("syncDot"),
   lockedBanner: document.getElementById("lockedBanner"),
+  statusMsg: document.getElementById("statusMsg"),
   gmLockRow: document.getElementById("gmLockRow"),
   lockCheckbox: document.getElementById("lockCheckbox"),
 };
@@ -114,20 +115,47 @@ function refreshLockUI() {
   }
 }
 
+function setStatus(msg, isError = false) {
+  if (!msg) {
+    els.statusMsg.classList.add("hidden");
+    return;
+  }
+  els.statusMsg.textContent = msg;
+  els.statusMsg.classList.remove("hidden");
+  els.statusMsg.classList.toggle("error", isError);
+}
+
 // ---------- YouTube IFrame API ----------
 
 function loadYouTubeApi() {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     if (window.YT && window.YT.Player) {
       resolve();
       return;
     }
     const tag = document.createElement("script");
     tag.src = "https://www.youtube.com/iframe_api";
+    tag.onerror = () =>
+      reject(new Error("The youtube.com/iframe_api script failed to load."));
     document.head.appendChild(tag);
     window.onYouTubeIframeAPIReady = () => resolve();
   });
 }
+
+function withTimeout(promise, ms, message) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
+  ]);
+}
+
+const YT_ERROR_MESSAGES = {
+  2: "That link doesn't point to a valid video.",
+  5: "This video can't be played in an embedded player.",
+  100: "That video was not found — it may be private or deleted.",
+  101: "The video's owner has disabled embedding for this video. Try a different link.",
+  150: "The video's owner has disabled embedding for this video. Try a different link.",
+};
 
 function createPlayer() {
   return new Promise((resolve) => {
@@ -144,10 +172,16 @@ function createPlayer() {
       events: {
         onReady: () => {
           playerReady = true;
+          setStatus(null);
           player.setVolume(Number(els.volumeBar.value));
           resolve();
         },
         onStateChange: onPlayerStateChange,
+        onError: (e) => {
+          const msg =
+            YT_ERROR_MESSAGES[e.data] || "The YouTube player hit an unknown error.";
+          setStatus(msg, true);
+        },
       },
     });
   });
@@ -312,8 +346,22 @@ async function boot() {
     const role = await OBR.player.getRole();
     isGM = role === "GM";
 
-    await loadYouTubeApi();
-    await createPlayer();
+    setStatus("Loading YouTube player…");
+    try {
+      await withTimeout(
+        loadYouTubeApi(),
+        8000,
+        "Couldn't reach youtube.com. If you're using an ad blocker (uBlock, Brave Shields, AdGuard) or strict tracking protection, allow youtube.com and owlbear.rodeo, then reload this panel."
+      );
+      await withTimeout(
+        createPlayer(),
+        8000,
+        "The YouTube player didn't finish loading. Try reloading this panel — if it keeps happening, check for ad blockers or content blockers on this site."
+      );
+    } catch (err) {
+      setStatus(err.message, true);
+      return; // don't proceed to wire up metadata if the player never came up
+    }
 
     const metadata = await OBR.room.getMetadata();
     remoteState = metadata[STATE_KEY] || null;
