@@ -17,39 +17,17 @@
     <div id="lockedBanner" class="banner hidden">Controls are locked by the GM</div>
     <div id="statusMsg" class="banner status hidden"></div>
 
-    <form id="loadForm" class="load-row">
+    <form id="addForm" class="load-row">
       <input id="urlInput" type="text" placeholder="Paste a YouTube link…" autocomplete="off" />
-      <button id="loadBtn" type="submit">Add</button>
+      <button id="addBtn" type="submit">Add</button>
     </form>
 
-    <div class="video-wrap" id="videoWrap">
-      <div id="ytPlayer"></div>
-      <div id="noVideo" class="no-video">No track loaded</div>
+    <div class="channels-header">
+      <span>Sounds</span>
+      <span id="channelsCount" class="playlist-count">0</span>
+      <button id="clearAllBtn" class="text-btn" title="Remove all sounds">Clear all</button>
     </div>
-
-    <div class="now-playing" id="nowPlaying">—</div>
-
-    <div class="seek-row">
-      <span id="curTime">0:00</span>
-      <input id="seekBar" type="range" min="0" max="100" value="0" step="0.1" />
-      <span id="durTime">0:00</span>
-    </div>
-
-    <div class="controls-row">
-      <button id="playPauseBtn" class="icon-btn" title="Play/Pause">▶</button>
-      <button id="loopBtn" class="icon-btn toggle" title="Loop">🔁</button>
-      <label class="volume-label">
-        🔊 <input id="volumeBar" type="range" min="0" max="100" value="70" />
-      </label>
-      <button id="hideVideoBtn" class="icon-btn toggle" title="Hide video, audio only">🙈</button>
-    </div>
-
-    <div class="playlist-header">
-      <span>Queue</span>
-      <span id="playlistCount" class="playlist-count">0</span>
-      <button id="clearPlaylistBtn" class="text-btn" title="Clear queue">Clear</button>
-    </div>
-    <div id="playlist" class="playlist"></div>
+    <div id="channels" class="channels"></div>
 
     <div class="footer-row">
       <label id="gmLockRow" class="lock-row hidden">
@@ -58,6 +36,8 @@
       </label>
     </div>
   </div>
+
+  <div id="playerHost" style="position:absolute; width:0; height:0; overflow:hidden;"></div>
 
   <script type="module" src="./app.js"></script>
 </body>
