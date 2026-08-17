@@ -1,4 +1,4 @@
-# Sync Audio Player — Owlbear Rodeo extension
+# Youtube Audio Player — Owlbear Rodeo extension
 
 Paste a YouTube link, hit **Load**, and everyone in the room hears the same
 track at the same position. No build step — it's plain HTML/CSS/JS.
@@ -15,32 +15,18 @@ track at the same position. No build step — it's plain HTML/CSS/JS.
 - The GM can optionally check "Only GM can control playback" to stop players
   from hijacking the queue.
 
-## 1. Host the files
-
-Owlbear Rodeo loads extensions from a public HTTPS URL — it can't load files
-from your computer directly. The easiest free options:
-
-**GitHub Pages**
-1. Create a new GitHub repo and push everything in this folder to it.
-2. Repo Settings → Pages → set source to the `main` branch (root).
-3. Your extension will be live at
-   `https://<your-username>.github.io/<repo-name>/manifest.json`
-
-**Or Cloudflare Pages / Netlify / Vercel** — drag-and-drop this folder into
-any of their dashboards and they'll give you a URL the same way.
-
-## 2. Install it in Owlbear Rodeo
+## 1. Install it in Owlbear Rodeo
 
 1. Go to owlbear.rodeo and open your profile (bottom left).
 2. Click **Add Extension**.
 3. Paste the URL to your hosted `manifest.json`, e.g.
-   `https://you.github.io/sync-audio-player/manifest.json`
+   `https://mezodawnhorizon.github.io/youtube-audio-player/manifest.json`
 4. Open (or create) a room, and enable the extension for that room in the
    room settings / create-room dialog.
 5. Click the new music-note icon in the top-left action bar — that opens the
    player for you and, once installed, for everyone else in the room too.
 
-## 3. Use it
+## 2. Use it
 
 - Paste any YouTube video/link (`youtube.com/watch?v=...`, `youtu.be/...`,
   and Shorts links all work) and click **Load**.

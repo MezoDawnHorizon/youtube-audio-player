@@ -24,6 +24,9 @@ const els = {
   statusMsg: document.getElementById("statusMsg"),
   gmLockRow: document.getElementById("gmLockRow"),
   lockCheckbox: document.getElementById("lockCheckbox"),
+  playlist: document.getElementById("playlist"),
+  playlistCount: document.getElementById("playlistCount"),
+  clearPlaylistBtn: document.getElementById("clearPlaylistBtn"),
 };
 
 let player = null;
@@ -63,6 +66,11 @@ function expectedSeek(state) {
   return state.seek + (Date.now() - state.updatedAt) / 1000;
 }
 
+function currentTrack(state) {
+  if (!state || !state.playlist) return null;
+  return state.playlist[state.currentIndex] || null;
+}
+
 async function fetchTitle(videoId) {
   try {
     const res = await fetch(
@@ -79,9 +87,8 @@ async function fetchTitle(videoId) {
 async function pushState(partial) {
   const base = remoteState || {};
   const next = {
-    url: base.url || "",
-    videoId: base.videoId || null,
-    title: base.title || "",
+    playlist: base.playlist || [],
+    currentIndex: base.currentIndex ?? -1,
     playing: base.playing || false,
     seek: base.seek || 0,
     updatedAt: Date.now(),
@@ -108,6 +115,7 @@ function refreshLockUI() {
     els.playPauseBtn,
     els.loopBtn,
     els.seekBar,
+    els.clearPlaylistBtn,
   ].forEach((el) => (el.disabled = disabled));
   if (isGM) {
     els.gmLockRow.classList.remove("hidden");
@@ -124,6 +132,90 @@ function setStatus(msg, isError = false) {
   els.statusMsg.classList.remove("hidden");
   els.statusMsg.classList.toggle("error", isError);
 }
+
+// ---------- playlist rendering + mutation ----------
+
+function renderPlaylist(state) {
+  const list = state?.playlist || [];
+  els.playlistCount.textContent = list.length;
+  els.playlist.innerHTML = "";
+
+  if (list.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "playlist-empty";
+    empty.textContent = "Queue is empty — add a link above.";
+    els.playlist.appendChild(empty);
+    return;
+  }
+
+  list.forEach((track, i) => {
+    const row = document.createElement("div");
+    row.className = "playlist-item" + (i === state.currentIndex ? " active" : "");
+    row.dataset.index = String(i);
+
+    const idx = document.createElement("span");
+    idx.className = "idx";
+    idx.textContent = i === state.currentIndex ? "▶" : String(i + 1);
+
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = track.title || "YouTube audio";
+    name.title = track.title || "YouTube audio";
+
+    const remove = document.createElement("span");
+    remove.className = "remove";
+    remove.textContent = "✕";
+
+    row.append(idx, name, remove);
+    els.playlist.appendChild(row);
+  });
+}
+
+function removeTrack(index) {
+  if (!canControl() || !remoteState) return;
+  const playlist = [...(remoteState.playlist || [])];
+  if (index < 0 || index >= playlist.length) return;
+
+  let currentIndex = remoteState.currentIndex ?? -1;
+  let playing = remoteState.playing;
+  let seek = remoteState.seek;
+
+  playlist.splice(index, 1);
+
+  if (index === currentIndex) {
+    if (playlist.length === 0) {
+      currentIndex = -1;
+      playing = false;
+      seek = 0;
+    } else {
+      currentIndex = Math.min(index, playlist.length - 1);
+      playing = true;
+      seek = 0;
+    }
+  } else if (index < currentIndex) {
+    currentIndex -= 1;
+    seek = playerReady ? player.getCurrentTime() : seek;
+  }
+
+  pushState({ playlist, currentIndex, playing, seek });
+}
+
+els.playlist.addEventListener("click", (e) => {
+  const row = e.target.closest(".playlist-item");
+  if (!row) return;
+  const index = Number(row.dataset.index);
+  if (!canControl()) return;
+  if (e.target.closest(".remove")) {
+    removeTrack(index);
+  } else {
+    pushState({ currentIndex: index, playing: true, seek: 0 });
+  }
+});
+
+els.clearPlaylistBtn.addEventListener("click", () => {
+  if (!canControl()) return;
+  pushState({ playlist: [], currentIndex: -1, playing: false, seek: 0 });
+});
 
 // ---------- YouTube IFrame API ----------
 
@@ -190,11 +282,18 @@ function createPlayer() {
 function onPlayerStateChange(e) {
   if (applyingRemote) return; // ignore changes we caused ourselves
   if (e.data === YT.PlayerState.ENDED) {
-    if (remoteState?.loop && canControl()) {
-      pushState({ seek: 0, playing: true });
+    if (!canControl()) return;
+    if (remoteState?.loop) {
       player.seekTo(0, true);
       player.playVideo();
-    } else if (canControl()) {
+      pushState({ seek: 0, playing: true });
+      return;
+    }
+    const playlist = remoteState?.playlist || [];
+    const nextIndex = (remoteState?.currentIndex ?? -1) + 1;
+    if (nextIndex < playlist.length) {
+      pushState({ currentIndex: nextIndex, playing: true, seek: 0 });
+    } else {
       pushState({ playing: false, seek: 0 });
     }
   }
@@ -203,13 +302,18 @@ function onPlayerStateChange(e) {
 // ---------- applying remote state to the local player ----------
 
 async function applyRemoteState(state) {
-  if (!state || !state.videoId) {
+  renderPlaylist(state);
+  const track = currentTrack(state);
+
+  if (!track) {
     els.noVideo.classList.remove("hidden");
     els.nowPlaying.textContent = "—";
+    els.playPauseBtn.textContent = "▶";
     return;
   }
+
   els.noVideo.classList.add("hidden");
-  els.nowPlaying.textContent = state.title || "YouTube audio";
+  els.nowPlaying.textContent = track.title || "YouTube audio";
   els.loopBtn.classList.toggle("active", !!state.loop);
   els.playPauseBtn.textContent = state.playing ? "⏸" : "▶";
 
@@ -221,11 +325,11 @@ async function applyRemoteState(state) {
     const current = player.getVideoData ? player.getVideoData() : null;
     const loadedId = current?.video_id;
 
-    if (loadedId !== state.videoId) {
+    if (loadedId !== track.id) {
       if (state.playing) {
-        player.loadVideoById({ videoId: state.videoId, startSeconds: Math.max(0, target) });
+        player.loadVideoById({ videoId: track.id, startSeconds: Math.max(0, target) });
       } else {
-        player.cueVideoById({ videoId: state.videoId, startSeconds: Math.max(0, target) });
+        player.cueVideoById({ videoId: track.id, startSeconds: Math.max(0, target) });
       }
     } else {
       const drift = Math.abs(player.getCurrentTime() - target);
@@ -250,25 +354,28 @@ els.loadForm.addEventListener("submit", async (e) => {
   const raw = els.urlInput.value;
   const videoId = extractVideoId(raw);
   if (!videoId) {
-    els.nowPlaying.textContent = "Couldn't read a YouTube link from that.";
+    setStatus("Couldn't read a YouTube link from that.", true);
     return;
   }
+  els.loadBtn.disabled = true;
   const title = await fetchTitle(videoId);
+  const playlist = [...(remoteState?.playlist || []), { id: videoId, title, url: raw.trim() }];
+  const isFirst = playlist.length === 1;
   await pushState({
-    url: raw.trim(),
-    videoId,
-    title,
-    playing: true,
-    seek: 0,
-    loop: remoteState?.loop || false,
+    playlist,
+    currentIndex: isFirst ? 0 : remoteState?.currentIndex ?? -1,
+    playing: isFirst ? true : remoteState?.playing ?? false,
+    seek: isFirst ? 0 : remoteState?.seek ?? 0,
   });
   els.urlInput.value = "";
+  refreshLockUI();
 });
 
 els.playPauseBtn.addEventListener("click", () => {
-  if (!canControl() || !remoteState?.videoId || !playerReady) return;
+  const track = currentTrack(remoteState);
+  if (!canControl() || !track || !playerReady) return;
   const nowPlaying = !remoteState.playing;
-  const seek = nowPlaying ? player.getCurrentTime() : player.getCurrentTime();
+  const seek = player.getCurrentTime();
   pushState({ playing: nowPlaying, seek });
 });
 
@@ -280,7 +387,8 @@ els.loopBtn.addEventListener("click", () => {
 els.seekBar.addEventListener("mousedown", () => (seekDragging = true));
 els.seekBar.addEventListener("touchstart", () => (seekDragging = true));
 els.seekBar.addEventListener("change", () => {
-  if (!canControl() || !playerReady || !remoteState?.videoId) {
+  const track = currentTrack(remoteState);
+  if (!canControl() || !playerReady || !track) {
     seekDragging = false;
     return;
   }
@@ -310,7 +418,8 @@ els.lockCheckbox.addEventListener("change", () => {
 // ---------- progress bar ticking ----------
 
 setInterval(() => {
-  if (!playerReady || seekDragging || !remoteState?.videoId) return;
+  const track = currentTrack(remoteState);
+  if (!playerReady || seekDragging || !track) return;
   const dur = player.getDuration() || 0;
   const cur = player.getCurrentTime() || 0;
   els.curTime.textContent = formatTime(cur);
@@ -341,6 +450,8 @@ async function boot() {
     els.videoWrap.classList.add("hidden-video");
     els.hideVideoBtn.classList.add("active");
   }
+
+  renderPlaylist(null);
 
   await OBR.onReady(async () => {
     const role = await OBR.player.getRole();

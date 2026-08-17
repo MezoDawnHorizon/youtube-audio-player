@@ -7,7 +7,7 @@
   "icon": "/youtube-audio-player/icon.svg",
   "action": {
     "title": "youtube Audio Player",
-    "icon": "/youtube-audio-player/icon.svg",
+    "icon": "/youtube-audio-player/icon2.svg",
     "popover": "/youtube-audio-player/index.html",
     "height": 480,
     "width": 340

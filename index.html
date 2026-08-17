@@ -19,7 +19,7 @@
 
     <form id="loadForm" class="load-row">
       <input id="urlInput" type="text" placeholder="Paste a YouTube link…" autocomplete="off" />
-      <button id="loadBtn" type="submit">Load</button>
+      <button id="loadBtn" type="submit">Add</button>
     </form>
 
     <div class="video-wrap" id="videoWrap">
@@ -43,6 +43,13 @@
       </label>
       <button id="hideVideoBtn" class="icon-btn toggle" title="Hide video, audio only">🙈</button>
     </div>
+
+    <div class="playlist-header">
+      <span>Queue</span>
+      <span id="playlistCount" class="playlist-count">0</span>
+      <button id="clearPlaylistBtn" class="text-btn" title="Clear queue">Clear</button>
+    </div>
+    <div id="playlist" class="playlist"></div>
 
     <div class="footer-row">
       <label id="gmLockRow" class="lock-row hidden">
