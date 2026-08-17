@@ -9,7 +9,7 @@
     "title": "youtube Audio Player",
     "icon": "/youtube-audio-player/icon2.svg",
     "popover": "/youtube-audio-player/index.html",
-    "height": 480,
+    "height": 640,
     "width": 340
   },
   "permissions": [

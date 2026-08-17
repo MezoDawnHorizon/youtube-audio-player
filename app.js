@@ -4,6 +4,7 @@ const NAMESPACE = "com.dndsync.audioplayer";
 const STATE_KEY = `${NAMESPACE}/state`;
 const DRIFT_TOLERANCE = 1.5; // seconds
 const RESYNC_INTERVAL = 3000; // ms
+const TICK_INTERVAL = 500; // ms, for seek bar updates
 
 const els = {
   urlInput: document.getElementById("urlInput"),
@@ -23,7 +24,8 @@ const els = {
 let isGM = false;
 let remoteState = null; // { tracks: [...], locked: bool }
 let apiPromise = null;
-const players = new Map(); // trackId -> { div, player, ready, applyingRemote }
+const players = new Map(); // trackId -> { div, player, ready, applyingRemote, error }
+const seekDragging = new Set(); // trackIds currently being scrubbed locally
 
 // ---------- helpers ----------
 
@@ -44,6 +46,13 @@ function extractVideoId(rawUrl) {
     /* not a valid URL */
   }
   return null;
+}
+
+function formatTime(sec) {
+  if (!isFinite(sec) || sec < 0) sec = 0;
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 function expectedSeek(track) {
@@ -179,6 +188,22 @@ function setTrackEnded(id, loop) {
   saveState({ tracks });
 }
 
+function seekTrackTo(id, seconds) {
+  if (!canControl() || !remoteState) return;
+  const entry = players.get(id);
+  if (entry?.ready) {
+    try {
+      entry.player.seekTo(seconds, true);
+    } catch (e) {
+      /* ignore */
+    }
+  }
+  const tracks = remoteState.tracks.map((t) =>
+    t.id !== id ? t : { ...t, seek: seconds, updatedAt: Date.now() }
+  );
+  saveState({ tracks });
+}
+
 // ---------- rendering ----------
 
 function renderChannels(state) {
@@ -202,6 +227,10 @@ function renderChannels(state) {
     row.className =
       "channel-row" + (track.playing ? " playing" : "") + (errored ? " errored" : "");
     row.dataset.id = track.id;
+
+    // --- main control line ---
+    const main = document.createElement("div");
+    main.className = "channel-main";
 
     const playBtn = document.createElement("button");
     playBtn.className = "mini-btn play-toggle" + (track.playing ? " active" : "");
@@ -240,7 +269,31 @@ function renderChannels(state) {
     removeBtn.textContent = "✕";
     removeBtn.title = "Remove";
 
-    row.append(playBtn, nameCol, loopBtn, volume, removeBtn);
+    main.append(playBtn, nameCol, loopBtn, volume, removeBtn);
+
+    // --- seek/scrub line ---
+    const seekRow = document.createElement("div");
+    seekRow.className = "channel-seek";
+
+    const curTime = document.createElement("span");
+    curTime.className = "cur-time";
+    curTime.textContent = "0:00";
+
+    const seekInput = document.createElement("input");
+    seekInput.type = "range";
+    seekInput.className = "seek-slider";
+    seekInput.min = "0";
+    seekInput.max = "100";
+    seekInput.step = "0.1";
+    seekInput.value = "0";
+
+    const durTime = document.createElement("span");
+    durTime.className = "dur-time";
+    durTime.textContent = "0:00";
+
+    seekRow.append(curTime, seekInput, durTime);
+
+    row.append(main, seekRow);
     els.channels.appendChild(row);
   });
 }
@@ -256,20 +309,47 @@ els.channels.addEventListener("click", (e) => {
 });
 
 els.channels.addEventListener("input", (e) => {
-  if (!e.target.classList.contains("volume-slider")) return;
+  const row = e.target.closest(".channel-row");
+  if (!row) return;
+  const id = row.dataset.id;
+
+  if (e.target.classList.contains("volume-slider")) {
+    const track = remoteState?.tracks?.find((t) => t.id === id);
+    if (!track) return;
+    const entry = players.get(id);
+    if (entry?.ready) {
+      try {
+        entry.player.setVolume(Number(e.target.value));
+      } catch (err) {
+        /* ignore */
+      }
+    }
+    localStorage.setItem(`${NAMESPACE}/vol/${track.videoId}`, e.target.value);
+    return;
+  }
+
+  if (e.target.classList.contains("seek-slider")) {
+    // live-preview the time label while dragging, don't push yet
+    seekDragging.add(id);
+    const entry = players.get(id);
+    const dur = entry?.ready ? entry.player.getDuration() || 0 : 0;
+    const seconds = (Number(e.target.value) / 100) * dur;
+    const curTimeEl = row.querySelector(".cur-time");
+    if (curTimeEl) curTimeEl.textContent = formatTime(seconds);
+  }
+});
+
+els.channels.addEventListener("change", (e) => {
+  if (!e.target.classList.contains("seek-slider")) return;
   const row = e.target.closest(".channel-row");
   const id = row?.dataset.id;
-  const track = remoteState?.tracks?.find((t) => t.id === id);
-  if (!track) return;
+  if (!id) return;
+  seekDragging.delete(id);
+  if (!canControl()) return;
   const entry = players.get(id);
-  if (entry?.ready) {
-    try {
-      entry.player.setVolume(Number(e.target.value));
-    } catch (err) {
-      /* ignore */
-    }
-  }
-  localStorage.setItem(`${NAMESPACE}/vol/${track.videoId}`, e.target.value);
+  const dur = entry?.ready ? entry.player.getDuration() || 0 : 0;
+  const seconds = (Number(e.target.value) / 100) * dur;
+  seekTrackTo(id, seconds);
 });
 
 els.clearAllBtn.addEventListener("click", clearAll);
@@ -395,6 +475,7 @@ function destroyTrackPlayer(id) {
   }
   entry.div?.remove();
   players.delete(id);
+  seekDragging.delete(id);
 }
 
 function applyTrackState(track) {
@@ -444,6 +525,26 @@ function reconcilePlayers(state) {
 setInterval(() => {
   if (remoteState) reconcilePlayers(remoteState);
 }, RESYNC_INTERVAL);
+
+// per-track seek bar / time label ticking
+setInterval(() => {
+  if (!remoteState?.tracks) return;
+  for (const track of remoteState.tracks) {
+    if (seekDragging.has(track.id)) continue;
+    const entry = players.get(track.id);
+    if (!entry?.ready) continue;
+    const row = els.channels.querySelector(`[data-id="${track.id}"]`);
+    if (!row) continue;
+    const dur = entry.player.getDuration() || 0;
+    const cur = entry.player.getCurrentTime() || 0;
+    const curEl = row.querySelector(".cur-time");
+    const durEl = row.querySelector(".dur-time");
+    const seekEl = row.querySelector(".seek-slider");
+    if (curEl) curEl.textContent = formatTime(cur);
+    if (durEl) durEl.textContent = formatTime(dur);
+    if (seekEl) seekEl.value = dur > 0 ? (cur / dur) * 100 : 0;
+  }
+}, TICK_INTERVAL);
 
 // sync status dot: goes stale if we haven't heard from metadata in a while
 let lastMetaAt = Date.now();

@@ -133,8 +133,8 @@ button:disabled {
 
 .channel-row {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 4px;
   padding: 6px 7px;
   border-radius: 8px;
   background: var(--bg-alt);
@@ -142,6 +142,28 @@ button:disabled {
 }
 .channel-row.playing { border-color: var(--accent); }
 .channel-row.errored { border-color: #ff5c5c; }
+
+.channel-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.channel-seek {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 30px; /* line up with name column, past the play button */
+}
+.channel-seek input[type="range"] { flex: 1; }
+.channel-seek .cur-time,
+.channel-seek .dur-time {
+  font-size: 10px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  min-width: 26px;
+}
+.channel-seek .dur-time { text-align: right; }
 
 .channel-row .name-col {
   flex: 1;
