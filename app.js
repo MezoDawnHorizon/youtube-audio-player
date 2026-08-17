@@ -26,6 +26,7 @@ let remoteState = null; // { tracks: [...], locked: bool }
 let apiPromise = null;
 const players = new Map(); // trackId -> { div, player, ready, applyingRemote, error }
 const seekDragging = new Set(); // trackIds currently being scrubbed locally
+const localAnchors = new Map(); // trackId -> { seek, playing, capturedAt, sourceUpdatedAt }
 
 // ---------- helpers ----------
 
@@ -55,10 +56,28 @@ function formatTime(sec) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+function updateAnchorIfNeeded(track) {
+  const prev = localAnchors.get(track.id);
+  if (!prev || prev.sourceUpdatedAt !== track.updatedAt) {
+    // This is a genuinely new update (seek/play/pause/load) we haven't anchored yet.
+    // Anchor it to THIS device's own clock, right now — never compare it to the
+    // sender's clock. That's what keeps two different computers in sync even if
+    // their system clocks disagree.
+    localAnchors.set(track.id, {
+      seek: track.seek,
+      playing: track.playing,
+      capturedAt: Date.now(),
+      sourceUpdatedAt: track.updatedAt,
+    });
+  }
+}
+
 function expectedSeek(track) {
   if (!track) return 0;
-  if (!track.playing) return track.seek;
-  return track.seek + (Date.now() - track.updatedAt) / 1000;
+  updateAnchorIfNeeded(track);
+  const anchor = localAnchors.get(track.id);
+  if (!anchor.playing) return anchor.seek;
+  return anchor.seek + (Date.now() - anchor.capturedAt) / 1000;
 }
 
 async function fetchTitle(videoId) {
@@ -476,6 +495,7 @@ function destroyTrackPlayer(id) {
   entry.div?.remove();
   players.delete(id);
   seekDragging.delete(id);
+  localAnchors.delete(id);
 }
 
 function applyTrackState(track) {
