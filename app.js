@@ -623,7 +623,7 @@ async function boot() {
   await OBR.onReady(async () => {
     const role = await OBR.player.getRole();
     isGM = role === "GM";
-    myPlayerId = await OBR.player.getId();
+    myPlayerId = OBR.player.id;
 
     const metadata = await OBR.room.getMetadata();
     remoteState = metadata[STATE_KEY] || { tracks: [], locked: false };
