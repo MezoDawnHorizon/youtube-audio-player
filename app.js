@@ -22,6 +22,7 @@ const els = {
 };
 
 let isGM = false;
+let myPlayerId = null;
 let remoteState = null; // { tracks: [...], locked: bool }
 let apiPromise = null;
 const players = new Map(); // trackId -> { div, player, ready, applyingRemote, error }
@@ -108,6 +109,10 @@ function canControl() {
   return !remoteState?.locked || isGM;
 }
 
+function isVisibleToMe(track) {
+  return !track.private || track.ownerId === myPlayerId;
+}
+
 function refreshLockUI() {
   const locked = !!remoteState?.locked;
   els.lockedBanner.classList.toggle("hidden", !(locked && !isGM));
@@ -157,7 +162,9 @@ async function addTrack(rawUrl) {
     videoId,
     title,
     url: rawUrl.trim(),
-    playing: true,
+    ownerId: myPlayerId,
+    private: false,
+    playing: false,
     seek: 0,
     updatedAt: Date.now(),
     loop: true, // ambience defaults to looping; flip off per-track if you want it to play once
@@ -181,6 +188,16 @@ function toggleTrackLoop(id) {
   if (!canControl() || !remoteState) return;
   const tracks = remoteState.tracks.map((t) =>
     t.id !== id ? t : { ...t, loop: !t.loop }
+  );
+  saveState({ tracks });
+}
+
+function togglePrivate(id) {
+  if (!remoteState) return;
+  const track = remoteState.tracks.find((t) => t.id === id);
+  if (!track || track.ownerId !== myPlayerId) return; // only the owner can hide their own track
+  const tracks = remoteState.tracks.map((t) =>
+    t.id !== id ? t : { ...t, private: !t.private }
   );
   saveState({ tracks });
 }
@@ -226,7 +243,7 @@ function seekTrackTo(id, seconds) {
 // ---------- rendering ----------
 
 function renderChannels(state) {
-  const tracks = state?.tracks || [];
+  const tracks = (state?.tracks || []).filter(isVisibleToMe);
   els.channelsCount.textContent = tracks.length;
   els.channels.innerHTML = "";
 
@@ -288,7 +305,20 @@ function renderChannels(state) {
     removeBtn.textContent = "✕";
     removeBtn.title = "Remove";
 
-    main.append(playBtn, nameCol, loopBtn, volume, removeBtn);
+    const rowButtons = [playBtn, nameCol, loopBtn, volume];
+
+    if (track.ownerId === myPlayerId) {
+      const privacyBtn = document.createElement("button");
+      privacyBtn.className = "mini-btn privacy-toggle" + (track.private ? " active" : "");
+      privacyBtn.textContent = track.private ? "🙈" : "👁";
+      privacyBtn.title = track.private
+        ? "Only you can hear this — click to share with the table"
+        : "Everyone can hear this — click to make it only for you";
+      rowButtons.push(privacyBtn);
+    }
+
+    rowButtons.push(removeBtn);
+    main.append(...rowButtons);
 
     // --- seek/scrub line ---
     const seekRow = document.createElement("div");
@@ -324,6 +354,7 @@ els.channels.addEventListener("click", (e) => {
   const id = row.dataset.id;
   if (e.target.closest(".play-toggle")) toggleTrackPlay(id);
   else if (e.target.closest(".loop-toggle")) toggleTrackLoop(id);
+  else if (e.target.closest(".privacy-toggle")) togglePrivate(id);
   else if (e.target.closest(".remove-track")) removeTrack(id);
 });
 
@@ -504,7 +535,15 @@ function applyTrackState(track) {
 
   entry.applyingRemote = true;
   try {
-    const target = expectedSeek(track);
+    let target = expectedSeek(track);
+    const duration = entry.player.getDuration() || 0;
+    if (duration > 0) {
+      // Never force a seek to (or past) the very end of the clip. Wall-clock-based
+      // sync can drift ahead of real playback during brief buffering — without this
+      // clamp that drift gets "corrected" by jumping right to the end, which fires
+      // a false ENDED event and restarts a loop way too early.
+      target = Math.min(target, Math.max(0, duration - 1));
+    }
     const current = entry.player.getVideoData ? entry.player.getVideoData() : null;
     const loadedId = current?.video_id;
 
@@ -529,7 +568,7 @@ function applyTrackState(track) {
 }
 
 function reconcilePlayers(state) {
-  const tracks = state?.tracks || [];
+  const tracks = (state?.tracks || []).filter(isVisibleToMe);
   const currentIds = new Set(tracks.map((t) => t.id));
 
   for (const id of [...players.keys()]) {
@@ -581,6 +620,7 @@ async function boot() {
   await OBR.onReady(async () => {
     const role = await OBR.player.getRole();
     isGM = role === "GM";
+    myPlayerId = await OBR.player.getId();
 
     const metadata = await OBR.room.getMetadata();
     remoteState = metadata[STATE_KEY] || { tracks: [], locked: false };
