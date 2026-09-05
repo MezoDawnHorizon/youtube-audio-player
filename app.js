@@ -109,8 +109,8 @@ function canControl() {
   return !remoteState?.locked || isGM;
 }
 
-function isVisibleToMe(track) {
-  return !track.private || track.ownerId === myPlayerId;
+function isNameHiddenFromMe(track) {
+  return track.hideTitle && track.ownerId !== myPlayerId;
 }
 
 function refreshLockUI() {
@@ -163,7 +163,7 @@ async function addTrack(rawUrl) {
     title,
     url: rawUrl.trim(),
     ownerId: myPlayerId,
-    private: false,
+    hideTitle: false,
     playing: false,
     seek: 0,
     updatedAt: Date.now(),
@@ -192,12 +192,12 @@ function toggleTrackLoop(id) {
   saveState({ tracks });
 }
 
-function togglePrivate(id) {
+function toggleHideTitle(id) {
   if (!remoteState) return;
   const track = remoteState.tracks.find((t) => t.id === id);
-  if (!track || track.ownerId !== myPlayerId) return; // only the owner can hide their own track
+  if (!track || track.ownerId !== myPlayerId) return; // only the owner decides to hide their own track's name
   const tracks = remoteState.tracks.map((t) =>
-    t.id !== id ? t : { ...t, private: !t.private }
+    t.id !== id ? t : { ...t, hideTitle: !t.hideTitle }
   );
   saveState({ tracks });
 }
@@ -243,7 +243,7 @@ function seekTrackTo(id, seconds) {
 // ---------- rendering ----------
 
 function renderChannels(state) {
-  const tracks = (state?.tracks || []).filter(isVisibleToMe);
+  const tracks = state?.tracks || [];
   els.channelsCount.textContent = tracks.length;
   els.channels.innerHTML = "";
 
@@ -277,8 +277,11 @@ function renderChannels(state) {
     nameCol.className = "name-col";
     const name = document.createElement("span");
     name.className = "name";
-    name.textContent = track.title || "YouTube audio";
-    name.title = track.title || "YouTube audio";
+    const displayTitle = isNameHiddenFromMe(track)
+      ? "🙈 Hidden track"
+      : track.title || "YouTube audio";
+    name.textContent = displayTitle;
+    name.title = displayTitle;
     nameCol.appendChild(name);
     if (errored) {
       const err = document.createElement("span");
@@ -308,13 +311,13 @@ function renderChannels(state) {
     const rowButtons = [playBtn, nameCol, loopBtn, volume];
 
     if (track.ownerId === myPlayerId) {
-      const privacyBtn = document.createElement("button");
-      privacyBtn.className = "mini-btn privacy-toggle" + (track.private ? " active" : "");
-      privacyBtn.textContent = track.private ? "🙈" : "👁";
-      privacyBtn.title = track.private
-        ? "Only you can hear this — click to share with the table"
-        : "Everyone can hear this — click to make it only for you";
-      rowButtons.push(privacyBtn);
+      const hideBtn = document.createElement("button");
+      hideBtn.className = "mini-btn hide-toggle" + (track.hideTitle ? " active" : "");
+      hideBtn.textContent = track.hideTitle ? "🙈" : "👁";
+      hideBtn.title = track.hideTitle
+        ? "Name hidden from others (still plays for everyone) — click to reveal it"
+        : "Everyone sees the track name — click to hide just the name from others";
+      rowButtons.push(hideBtn);
     }
 
     rowButtons.push(removeBtn);
@@ -354,7 +357,7 @@ els.channels.addEventListener("click", (e) => {
   const id = row.dataset.id;
   if (e.target.closest(".play-toggle")) toggleTrackPlay(id);
   else if (e.target.closest(".loop-toggle")) toggleTrackLoop(id);
-  else if (e.target.closest(".privacy-toggle")) togglePrivate(id);
+  else if (e.target.closest(".hide-toggle")) toggleHideTitle(id);
   else if (e.target.closest(".remove-track")) removeTrack(id);
 });
 
@@ -568,7 +571,7 @@ function applyTrackState(track) {
 }
 
 function reconcilePlayers(state) {
-  const tracks = (state?.tracks || []).filter(isVisibleToMe);
+  const tracks = state?.tracks || [];
   const currentIds = new Set(tracks.map((t) => t.id));
 
   for (const id of [...players.keys()]) {
